@@ -111,6 +111,22 @@ int kbhit(void)
 #endif
 }
 
+struct termios oldterm, new_term;
+void set_stdin(void)
+{
+  tcgetattr(0,&oldterm);
+  new_term = oldterm;
+  new_term.c_lflag &= ~(ICANON | ECHO | ISIG); // 의미는 struct termios를 찾으면 됨.
+  new_term.c_cc[VMIN] = 1;
+  new_term.c_cc[VTIME] = 0;
+  tcsetattr(0, TCSANOW, &new_term);
+}
+
+void reset_stdin(void)
+{
+  tcsetattr(0, TCSANOW, &oldterm);
+}
+
 void usage(char *progname)
 {
   printf("-----------------------------------------------------------------------\n");
@@ -316,6 +332,62 @@ void dump(dynamixel::PortHandler *portHandler, dynamixel::PacketHandler *packetH
   }
 
   free(data);
+}
+
+void pingTest(dynamixel::PortHandler *portHandler, int id, int try_cnt = 100)
+{
+  // Initialize Packethandler1 instance
+  dynamixel::PacketHandler *packetHandler1 = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION1);
+
+  // Initialize Packethandler2 instance
+  dynamixel::PacketHandler *packetHandler2 = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION2);
+
+  int ch = 0;
+  //int try_cnt = 100;
+  int cnt = 0, success_cnt_1 = 0, fail_cnt_1 = 0, success_cnt_2 = 0, fail_cnt_2 = 0;
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "PING TEST : try %d times \n", try_cnt);
+
+  set_stdin();
+  while(1)
+  {
+    if (packetHandler1->ping(portHandler, id) == COMM_SUCCESS)
+    {
+      success_cnt_1++;
+    }
+    else
+    {
+      fail_cnt_1++;
+    }
+
+    if (packetHandler2->ping(portHandler, id) == COMM_SUCCESS)
+    {
+      success_cnt_2++;
+    }
+    else
+    {
+      fail_cnt_2++;
+    }
+
+    if(kbhit())
+    {
+      ch = getch();
+      if(ch == 0x1b)  //ESC
+      {
+        fprintf(stderr, "  * Stop after %dth test\n", ++cnt);
+        break;
+      }
+    }
+
+    if(++cnt >= try_cnt)
+      break;
+  }
+  reset_stdin();
+
+  fprintf(stderr, "  - Protocol 1.0 ping test : SUCCESS[%03d] / FAIL[%03d] (%.2f %)\n", success_cnt_1, fail_cnt_1, (float)success_cnt_1/(float)cnt*100.0);
+  fprintf(stderr, "  - Protocol 2.0 ping test : SUCCESS[%03d] / FAIL[%03d] (%.2f %)\n", success_cnt_2, fail_cnt_2, (float)success_cnt_2/(float)cnt*100.0);
+  fprintf(stderr, "\n");
 }
 
 int main(int argc, char *argv[])
@@ -717,6 +789,21 @@ int main(int argc, char *argv[])
           packetHandler2->printTxRxResult(dxl_comm_result);
           fprintf(stderr, "\n Fail to reset! \n\n");
         }
+      }
+      else
+      {
+        fprintf(stderr, " Invalid parameters! \n");
+      }
+    }
+    else if (strcmp(cmd, "pingtest") == 0)
+    {
+      if (num_param == 1)
+      {
+        pingTest(portHandler, atoi(param[0]));
+      }
+      else if(num_param == 2)
+      {
+        pingTest(portHandler, atoi(param[0]), atoi(param[1]));
       }
       else
       {
